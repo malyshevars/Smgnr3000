@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QMessageBox, QDateEdit,
+    QPushButton, QLabel, QMessageBox, QDateTimeEdit,  # ИСПРАВЛЕНИЕ: заменили QDateEdit на QDateTimeEdit
     QFileDialog, QCheckBox
 )
-from PyQt5.QtCore import QDate
+from PyQt5.QtCore import QDateTime  # ИСПРАВЛЕНИЕ: импорт для QDateTime
 
 import config  # PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASSWORD
 
@@ -21,7 +21,7 @@ class TempPlotter(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("График температур")
-        self.setGeometry(300, 300, 500, 200)
+        self.setGeometry(300, 300, 600, 250)  # ИСПРАВЛЕНИЕ: увеличили окно для удобства выбора времени
         self.df = None
         self.current_dir = None
         self.init_ui()
@@ -30,19 +30,19 @@ class TempPlotter(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
 
-        # Даты
+        # Даты и время
         date_layout = QHBoxLayout()
         date_layout.addWidget(QLabel("С:"))
-        self.start_date = QDateEdit(calendarPopup=True)
-        self.start_date.setDate(QDate.currentDate())
-        self.start_date.setDisplayFormat("yyyy-MM-dd")
-        date_layout.addWidget(self.start_date)
+        self.start_datetime = QDateTimeEdit(calendarPopup=True)  # ИСПРАВЛЕНИЕ: QDateTimeEdit вместо QDateEdit
+        self.start_datetime.setDateTime(QDateTime.currentDateTime())  # ИСПРАВЛЕНИЕ: по умолчанию текущее время
+        self.start_datetime.setDisplayFormat("yyyy-MM-dd HH:mm")    # ИСПРАВЛЕНИЕ: формат с часами и минутами
+        date_layout.addWidget(self.start_datetime)
 
         date_layout.addWidget(QLabel("По:"))
-        self.end_date = QDateEdit(calendarPopup=True)
-        self.end_date.setDate(QDate.currentDate())
-        self.end_date.setDisplayFormat("yyyy-MM-dd")
-        date_layout.addWidget(self.end_date)
+        self.end_datetime = QDateTimeEdit(calendarPopup=True)  # ИСПРАВЛЕНИЕ
+        self.end_datetime.setDateTime(QDateTime.currentDateTime())  # ИСПРАВЛЕНИЕ
+        self.end_datetime.setDisplayFormat("yyyy-MM-dd HH:mm")     # ИСПРАВЛЕНИЕ
+        date_layout.addWidget(self.end_datetime)
 
         layout.addLayout(date_layout)
 
@@ -84,8 +84,9 @@ class TempPlotter(QWidget):
             )
 
     def load_and_plot_db(self):
-        start_str = self.start_date.date().toString("yyyy-MM-dd") + " 00:00:00"
-        end_str   = self.end_date.date().toString("yyyy-MM-dd")   + " 23:59:59"
+        # ИСПРАВЛЕНИЕ: используем дату и время для фильтрации
+        start_str = self.start_datetime.dateTime().toString("yyyy-MM-dd HH:mm:ss")
+        end_str   = self.end_datetime.dateTime().toString("yyyy-MM-dd HH:mm:ss")
         try:
             conn = psycopg2.connect(
                 host=config.PG_HOST,
@@ -111,13 +112,16 @@ class TempPlotter(QWidget):
             QMessageBox.information(
                 self,
                 "Нет данных",
-                f"Нет записей за период {start_str[:10]} – {end_str[:10]}."
+                f"Нет записей за период {start_str} – {end_str}."
             )
             return
 
         df.set_index("timestamp", inplace=True)
         self.df = df
-        self.plot_temp(f"с_{start_str[:10]}_по_{end_str[:10]}")
+        # ИСПРАВЛЕНИЕ: в суффикс добавляем дату и время запроса
+        now = datetime.now()
+        suffix = f"{now.strftime('%Y-%m-%d_%H%M')}"
+        self.plot_temp(f"DB_{suffix}")
 
     def load_and_plot_csv(self):
         path, _ = QFileDialog.getOpenFileName(self, "Выбрать CSV", "", "CSV Files (*.csv)")
@@ -139,7 +143,10 @@ class TempPlotter(QWidget):
         # запомним папку для автосохранения
         self.current_dir = os.path.dirname(path)
         filename = os.path.basename(path)
-        self.plot_temp(f"CSV_{filename}")
+        # ИСПРАВЛЕНИЕ: добавляем время запроса к имени
+        now = datetime.now()
+        self.file_suffix = f"CSV_{filename}_{now.strftime('%Y-%m-%d_%H%M')}"
+        self.plot_temp(self.file_suffix)
 
     def plot_temp(self, title_suffix=""):
         if self.df is None or self.df.empty:
@@ -163,6 +170,7 @@ class TempPlotter(QWidget):
                 out_path = os.path.join(self.current_dir, filename)
             else:
                 out_path = filename
+            # ИСПРАВЛЕНИЕ: сохраняем с уникальным именем, включающим время, чтобы избежать перезаписи
             plt.savefig(out_path, dpi=300)
             QMessageBox.information(self, "Сохранено", f"График сохранён в\n{out_path}")
 
